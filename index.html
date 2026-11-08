@@ -71,12 +71,14 @@ footer{text-align:center;padding:30px;color:#9cabc1}
 <h3>পণ্যের তালিকা</h3>
 <div id="adminList"></div>
 <hr>
-<hr>
+
 <h3>💳 পেমেন্ট নম্বর সেটিংস</h3>
+<p class="small">আপনার নিজের bKash ও Nagad নম্বর এখানে লিখুন।</p>
 <input id="bkashNumber" placeholder="ব্যক্তিগত bKash নম্বর" inputmode="tel">
 <input id="nagadNumber" placeholder="ব্যক্তিগত Nagad নম্বর" inputmode="tel">
 <button class="buy" onclick="savePaymentSettings()">পেমেন্ট নম্বর সংরক্ষণ</button>
 <hr>
+
 <h3>🛒 অর্ডার ম্যানেজমেন্ট</h3>
 <p id="orderCount">মোট অর্ডার: ০</p>
 <div id="orderList"></div>
@@ -127,6 +129,16 @@ let adminUser = null;
 
 function safe(v){
  return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+async function getPaymentSettings(){
+ const {data,error}=await db.from("payment_settings")
+ .select("*").eq("id",1).maybeSingle();
+ if(error){
+  console.error(error);
+  return null;
+ }
+ return data;
 }
 
 async function loadProducts(){
@@ -206,18 +218,70 @@ async function placeOrder(){
  document.getElementById("trackNumber").value=result.order_number;
  document.getElementById("trackToken").value=result.tracking_token;
 
+ const settings=await getPaymentSettings();
+ const destination=payment==="bKash"
+ ? settings?.bkash_number
+ : settings?.nagad_number;
+
  document.getElementById("trackResult").innerHTML=`
  <div class="orderItem">
  <b>অর্ডার গ্রহণ করা হয়েছে!</b><br>
  Order Number:<br><b>${safe(result.order_number)}</b><br>
  Tracking Code:<br><b>${safe(result.tracking_token)}</b><br>
  এই দুটি তথ্য সংরক্ষণ করুন। অন্য কাউকে Tracking Code দেবেন না।
+ <hr>
+ <b>💳 ${safe(payment)} পেমেন্ট করুন</b><br>
+ <p>পেমেন্ট নম্বর:</p>
+ <h3>${destination?safe(destination):"পেমেন্ট নম্বর এখনো সেট করা হয়নি। অ্যাডমিনের সঙ্গে যোগাযোগ করুন।"}</h3>
+ <p class="small">উপরের নম্বরে অর্ডারের নির্ধারিত টাকা পাঠিয়ে নিচের তথ্য দিন।</p>
+ <label>যে নম্বর থেকে টাকা পাঠিয়েছেন:</label>
+ <input id="senderPhone" placeholder="প্রেরকের মোবাইল নম্বর" inputmode="tel">
+ <label>Transaction ID:</label>
+ <input id="transactionId" placeholder="ট্রানজেকশন আইডি">
+ <button class="buy" onclick="submitPayment()">পেমেন্টের তথ্য জমা দিন</button>
+ <p id="paymentMessage" class="small"></p>
  </div>`;
 
  document.getElementById("customer").value="";
  document.getElementById("gameID").value="";
  document.getElementById("phone").value="";
  document.getElementById("payment").value="";
+}
+
+async function submitPayment(){
+ const number=document.getElementById("trackNumber").value.trim();
+ const token=document.getElementById("trackToken").value.trim();
+ const sender=document.getElementById("senderPhone")?.value.trim();
+ const trx=document.getElementById("transactionId")?.value.trim();
+ const message=document.getElementById("paymentMessage");
+
+ if(!sender||sender.length<8||!trx||trx.length<5){
+  alert("প্রেরকের নম্বর ও সঠিক Transaction ID লিখুন।");
+  return;
+ }
+
+ const btn=document.querySelector("#trackResult .buy");
+ btn.disabled=true;
+ btn.innerText="জমা হচ্ছে...";
+
+ const {data,error}=await db.rpc("submit_payment",{
+  p_order_number:number,
+  p_tracking_token:token,
+  p_sender_phone:sender,
+  p_transaction_id:trx
+ });
+
+ btn.disabled=false;
+ btn.innerText="পেমেন্টের তথ্য জমা দিন";
+
+ if(error||data!==true){
+  message.innerText="পেমেন্টের তথ্য জমা হয়নি। অর্ডার ও তথ্য যাচাই করুন।";
+  console.error(error);
+  return;
+ }
+
+ message.innerText="পেমেন্টের তথ্য জমা হয়েছে। অ্যাডমিন যাচাই করবেন।";
+ btn.disabled=true;
 }
 
 async function trackOrder(){
@@ -298,10 +362,13 @@ async function adminLogout(){
 
 async function adminRender(){
  if(!adminUser)return;
-const { data: paymentData } = await db.from("payment_settings").select("*").eq("id", 1).maybeSingle();
 
-document.getElementById("bkashNumber").value = paymentData?.bkash_number || "";
-document.getElementById("nagadNumber").value = paymentData?.nagad_number || "";
+ const {data:paymentData}=await db.from("payment_settings")
+ .select("*").eq("id",1).maybeSingle();
+
+ document.getElementById("bkashNumber").value=paymentData?.bkash_number||"";
+ document.getElementById("nagadNumber").value=paymentData?.nagad_number||"";
+
  const {data,error}=await db.from("products").select("*").order("id");
 
  if(error){
@@ -318,6 +385,25 @@ document.getElementById("nagadNumber").value = paymentData?.nagad_number || "";
  <button class="edit" onclick="editProduct(${Number(p.id)})">Edit</button>
  <button class="danger" onclick="deleteProduct(${Number(p.id)})">Delete</button>
  </div>`).join("")||"কোনো পণ্য নেই।";
+}
+
+async function savePaymentSettings(){
+ if(!adminUser)return alert("আগে Admin Login করুন।");
+
+ const bkash=document.getElementById("bkashNumber").value.trim();
+ const nagad=document.getElementById("nagadNumber").value.trim();
+
+ const {error}=await db.from("payment_settings").upsert({
+  id:1,
+  bkash_number:bkash,
+  nagad_number:nagad
+ });
+
+ if(error){
+  alert("সংরক্ষণ হয়নি: "+error.message);
+ }else{
+  alert("পেমেন্ট নম্বর সংরক্ষণ হয়েছে!");
+ }
 }
 
 function editProduct(id){
@@ -407,8 +493,15 @@ async function orderRender(){
  দাম: ৳${safe(o.price)}<br>
  Game UID: ${safe(o.game_uid)}<br>
  মোবাইল: ${safe(o.phone)}<br>
- পেমেন্ট: ${safe(o.payment_method)}<br>
- স্ট্যাটাস: <b>${safe(o.status)}</b><br>
+ পেমেন্ট পদ্ধতি: ${safe(o.payment_method)}<br>
+ প্রেরকের নম্বর: ${safe(o.sender_phone||"এখনো জমা হয়নি")}<br>
+ Transaction ID: ${safe(o.transaction_id||"এখনো জমা হয়নি")}<br>
+ পেমেন্ট যাচাই: <b>${safe(o.payment_status||"Unpaid")}</b><br>
+ ${o.payment_status==="Submitted"?`
+ <button class="edit" onclick="changePaymentStatus(${Number(o.id)},'Verified')">পেমেন্ট Verified</button>
+ <button class="danger" onclick="changePaymentStatus(${Number(o.id)},'Rejected')">পেমেন্ট Rejected</button>
+ `:""}
+ অর্ডার স্ট্যাটাস: <b>${safe(o.status)}</b><br>
  <select class="status" onchange="changeStatus(${Number(o.id)},this.value)">
  <option value="Pending" ${o.status==="Pending"?"selected":""}>Pending</option>
  <option value="Processing" ${o.status==="Processing"?"selected":""}>Processing</option>
@@ -417,6 +510,22 @@ async function orderRender(){
  </select>
  <button class="danger" onclick="deleteOrder(${Number(o.id)})">অর্ডার মুছুন</button>
  </div>`).join(""):"এখনো কোনো অর্ডার নেই।";
+}
+
+async function changePaymentStatus(id,status){
+ if(!adminUser)return;
+
+ if(!confirm("আপনি কি পেমেন্ট "+status+" করতে চান?"))return;
+
+ const {error}=await db.from("orders")
+ .update({payment_status:status}).eq("id",id);
+
+ if(error){
+  alert("পেমেন্ট স্ট্যাটাস পরিবর্তন হয়নি: "+error.message);
+  return;
+ }
+
+ await orderRender();
 }
 
 async function changeStatus(id,status){
@@ -451,22 +560,7 @@ function closeAdmin(){
 }
 
 loadProducts();
- async function savePaymentSettings() {
-  const bkash = document.getElementById("bkashNumber").value.trim();
-  const nagad = document.getElementById("nagadNumber").value.trim();
-
-  const { error } = await db.from("payment_settings").upsert({
-    id: 1,
-    bkash_number: bkash,
-    nagad_number: nagad
-  });
-
-  if (error) {
-    alert("সংরক্ষণ হয়নি: " + error.message);
-  } else {
-    alert("পেমেন্ট নম্বর সংরক্ষণ হয়েছে!");
-  }
- }
 </script>
 </body>
-</html>
+ </html>
+ 
