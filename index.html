@@ -298,7 +298,10 @@ async function adminLogout(){
 
 async function adminRender(){
  if(!adminUser)return;
+const { data: paymentData } = await db.from("payment_settings").select("*").eq("id", 1).maybeSingle();
 
+document.getElementById("bkashNumber").value = paymentData?.bkash_number || "";
+document.getElementById("nagadNumber").value = paymentData?.nagad_number || "";
  const {data,error}=await db.from("products").select("*").order("id");
 
  if(error){
