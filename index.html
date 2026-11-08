@@ -448,6 +448,22 @@ function closeAdmin(){
 }
 
 loadProducts();
+ async function savePaymentSettings() {
+  const bkash = document.getElementById("bkashNumber").value.trim();
+  const nagad = document.getElementById("nagadNumber").value.trim();
+
+  const { error } = await db.from("payment_settings").upsert({
+    id: 1,
+    bkash_number: bkash,
+    nagad_number: nagad
+  });
+
+  if (error) {
+    alert("সংরক্ষণ হয়নি: " + error.message);
+  } else {
+    alert("পেমেন্ট নম্বর সংরক্ষণ হয়েছে!");
+  }
+ }
 </script>
 </body>
 </html>
