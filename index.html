@@ -5,6 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TopUp King</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#0b1020;color:white;font-family:Arial,sans-serif}
@@ -13,11 +14,10 @@ header{background:#111a30;padding:17px 5%;display:flex;justify-content:space-bet
 button{cursor:pointer;border:0;border-radius:8px;padding:11px 14px;font-weight:bold;margin:4px}
 .admin{background:#34506d;color:white}
 .hero{padding:35px 6%;background:linear-gradient(120deg,#102d40,#182044)}
-.hero h1{font-size:30px}
 .search,input,select{width:100%;padding:13px;margin:7px 0;background:#101a30;color:white;border:1px solid #34435e;border-radius:7px}
 h2{margin:25px 5% 15px}
 .products{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:14px;padding:0 5%}
-.card,#adminPanel{background:#17233b;border:1px solid #293957;border-radius:12px;padding:16px}
+.card,#adminPanel,.trackBox{background:#17233b;border:1px solid #293957;border-radius:12px;padding:16px}
 .price{color:#36e6a0;font-size:20px;font-weight:bold}
 .buy{background:#16bd82;color:#071b17;width:100%;margin-top:10px}
 #adminPanel{display:none;margin:20px 5%}
@@ -27,10 +27,13 @@ h2{margin:25px 5% 15px}
 .status{background:#263550;color:white;width:auto}
 .modal{display:none;position:fixed;inset:0;background:#000c;z-index:10;align-items:center;justify-content:center;padding:15px}
 .modalBox{background:#17233b;padding:22px;border-radius:13px;width:100%;max-width:400px}
+.trackBox{margin:20px 5%}
+.small{color:#aab8ce;font-size:13px}
 footer{text-align:center;padding:30px;color:#9cabc1}
 </style>
 </head>
 <body>
+
 <header>
 <div class="logo">⚡ TOPUP KING</div>
 <button class="admin" onclick="adminLogin()">Admin Login</button>
@@ -43,22 +46,38 @@ footer{text-align:center;padding:30px;color:#9cabc1}
 </section>
 
 <h2>🎮 জনপ্রিয় গেম টপ-আপ</h2>
-<div class="products" id="products"></div>
+<div class="products" id="products">পণ্য লোড হচ্ছে...</div>
+
+<section class="trackBox">
+<h3>📦 অর্ডার ট্র্যাক করুন</h3>
+<p class="small">অর্ডার করার পর পাওয়া Order Number ও Tracking Code লিখুন।</p>
+<input id="trackNumber" placeholder="Order Number">
+<input id="trackToken" placeholder="Tracking Code">
+<button class="buy" onclick="trackOrder()">অর্ডারের অবস্থা দেখুন</button>
+<div id="trackResult"></div>
+</section>
 
 <section id="adminPanel">
 <h2 style="margin:5px 0 15px">⚙️ Admin Dashboard</h2>
+<p id="adminEmail" class="small"></p>
+
 <h3>পণ্য ব্যবস্থাপনা</h3>
-<input id="pname" placeholder="পণ্যের নাম">
+<input id="pname" placeholder="প্যাকেজের নাম">
 <input id="pgame" placeholder="গেমের নাম">
-<input id="pprice" type="number" placeholder="দাম (টাকা)">
+<input id="pprice" type="number" min="1" placeholder="দাম (টাকা)">
 <button class="buy" onclick="saveProduct()">+ পণ্য যোগ করুন</button>
+<button class="admin" onclick="cancelEdit()">Edit বাতিল</button>
+
 <h3>পণ্যের তালিকা</h3>
 <div id="adminList"></div>
 <hr>
+
 <h3>🛒 অর্ডার ম্যানেজমেন্ট</h3>
 <p id="orderCount">মোট অর্ডার: ০</p>
 <div id="orderList"></div>
+
 <button class="admin" onclick="closeAdmin()">Dashboard বন্ধ করুন</button>
+<button class="danger" onclick="adminLogout()">Admin Logout</button>
 </section>
 
 <div class="modal" id="orderModal">
@@ -67,141 +86,363 @@ footer{text-align:center;padding:30px;color:#9cabc1}
 <p id="selectedProduct"></p>
 <input id="customer" placeholder="আপনার নাম">
 <input id="gameID" placeholder="আপনার Game UID">
-<input id="phone" placeholder="মোবাইল নম্বর">
+<input id="phone" placeholder="মোবাইল নম্বর" inputmode="tel">
 <select id="payment">
 <option value="">পেমেন্ট পদ্ধতি নির্বাচন করুন</option>
-<option>bKash</option>
-<option>Nagad</option>
+<option value="bKash">bKash</option>
+<option value="Nagad">Nagad</option>
 </select>
 <button class="buy" onclick="placeOrder()">অর্ডার সাবমিট</button>
 <button class="admin" onclick="closeOrder()">বন্ধ করুন</button>
 </div>
 </div>
 
+<div class="modal" id="loginModal">
+<div class="modalBox">
+<h3>Admin Login</h3>
+<input id="adminEmailInput" type="email" placeholder="Admin Email">
+<input id="adminPasswordInput" type="password" placeholder="Password">
+<button class="buy" onclick="doAdminLogin()">Login</button>
+<button class="admin" onclick="closeLogin()">বন্ধ করুন</button>
+</div>
+</div>
+
 <footer>© 2026 TopUp King | All Rights Reserved</footer>
 
 <script>
-let products=JSON.parse(localStorage.getItem("tk_products"))||[
-{id:1,name:"25 Diamonds",game:"Free Fire",price:25},
-{id:2,name:"50 Diamonds",game:"Free Fire",price:40},
-{id:3,name:"115 Diamonds",game:"Free Fire",price:85},
-{id:4,name:"240 Diamonds",game:"Free Fire",price:165},
-{id:5,name:"60 UC",game:"PUBG Mobile",price:120},
-{id:6,name:"325 UC",game:"PUBG Mobile",price:590}
-];
-let orders=JSON.parse(localStorage.getItem("tk_orders"))||[];
-let editing=null,selected=null;
+const SUPABASE_URL = "https://iwepsepcftuusplnvyps.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_PIUH7b87lER5wl3UPY8kig_RIfob9Y9";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
-function save(){
-localStorage.setItem("tk_products",JSON.stringify(products));
-localStorage.setItem("tk_orders",JSON.stringify(orders));
-}
-function render(){
-let q=document.getElementById("search").value.toLowerCase();
-document.getElementById("products").innerHTML=products.filter(p=>(p.name+" "+p.game).toLowerCase().includes(q)).map(p=>`
-<div class="card">
-<small>${p.game}</small><h3>${p.name}</h3>
-<div class="price">৳${p.price}</div>
-<button class="buy" onclick="openOrder(${p.id})">এখনই কিনুন</button>
-</div>`).join("");
-}
-function adminLogin(){
-let pass=prompt("Admin Password লিখুন:");
-if(pass==="1234"){
-document.getElementById("adminPanel").style.display="block";
-adminRender();orderRender();
-}else if(pass!==null)alert("ভুল পাসওয়ার্ড!");
-}
-function adminRender(){
-document.getElementById("adminList").innerHTML=products.map(p=>`
-<div class="adminItem"><b>${p.game} - ${p.name}</b> | ৳${p.price}<br>
-<button class="edit" onclick="editProduct(${p.id})">Edit</button>
-<button class="danger" onclick="deleteProduct(${p.id})">Delete</button></div>`).join("");
-}
-function saveProduct(){
-let name=document.getElementById("pname").value.trim();
-let game=document.getElementById("pgame").value.trim();
-let price=Number(document.getElementById("pprice").value);
-if(!name||!game||price<=0)return alert("সব তথ্য সঠিকভাবে পূরণ করুন");
-if(editing!==null){
-let p=products.find(x=>x.id===editing);
-Object.assign(p,{name,game,price});editing=null;
-}else products.push({id:Date.now(),name,game,price});
-document.getElementById("pname").value="";
-document.getElementById("pgame").value="";
-document.getElementById("pprice").value="";
-save();render();adminRender();
-}
-function editProduct(id){
-let p=products.find(x=>x.id===id);
-document.getElementById("pname").value=p.name;
-document.getElementById("pgame").value=p.game;
-document.getElementById("pprice").value=p.price;
-editing=id;
-}
-function deleteProduct(id){
-if(confirm("পণ্যটি মুছে ফেলতে চান?")){
-products=products.filter(p=>p.id!==id);
-save();render();adminRender();
-}
-}
-function openOrder(id){
-selected=products.find(p=>p.id===id);
-document.getElementById("selectedProduct").innerText=selected.name+" - ৳"+selected.price;
-document.getElementById("orderModal").style.display="flex";
-}
-function closeOrder(){document.getElementById("orderModal").style.display="none"}
-function placeOrder(){
-let customer=document.getElementById("customer").value.trim();
-let uid=document.getElementById("gameID").value.trim();
-let phone=document.getElementById("phone").value.trim();
-let payment=document.getElementById("payment").value;
-if(!customer||!uid||!phone||!payment)return alert("সব তথ্য পূরণ করুন");
-orders.push({
-id:Date.now(),customer,product:selected.name,game:selected.game,
-price:selected.price,uid,phone,payment,status:"Pending"
-});
-save();closeOrder();
-alert("ডেমো অর্ডার গ্রহণ করা হয়েছে।");
-document.getElementById("customer").value="";
-document.getElementById("gameID").value="";
-document.getElementById("phone").value="";
-document.getElementById("payment").value="";
-}
-function orderRender(){
-document.getElementById("orderCount").innerText="মোট অর্ডার: "+orders.length;
-document.getElementById("orderList").innerHTML=orders.length?orders.map(o=>`
-<div class="orderItem">
-<b>অর্ডার #${o.id}</b><br>
-ক্রেতা: ${safe(o.customer)}<br>
-পণ্য: ${safe(o.game)} - ${safe(o.product)}<br>
-দাম: ৳${o.price}<br>
-Game UID: ${safe(o.uid)}<br>
-মোবাইল: ${safe(o.phone)}<br>
-পেমেন্ট: ${safe(o.payment)}<br>
-স্ট্যাটাস: <b>${safe(o.status)}</b><br>
-<select class="status" onchange="changeStatus(${o.id},this.value)">
-<option ${o.status==="Pending"?"selected":""}>Pending</option>
-<option ${o.status==="Complete"?"selected":""}>Complete</option>
-<option ${o.status==="Cancelled"?"selected":""}>Cancelled</option>
-</select>
-<button class="danger" onclick="deleteOrder(${o.id})">অর্ডার মুছুন</button>
-</div>`).join(""):"এখনো কোনো অর্ডার নেই।";
-}
+let products = [];
+let adminProducts = [];
+let selected = null;
+let editing = null;
+let adminUser = null;
+
 function safe(v){
-return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+ return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
-function changeStatus(id,status){
-let o=orders.find(x=>x.id===id);
-if(o){o.status=status;save();orderRender();}
+
+async function loadProducts(){
+ const {data,error}=await db.from("products")
+ .select("id,game_name,package_name,price")
+ .eq("active",true).order("id");
+
+ if(error){
+  document.getElementById("products").innerText="পণ্য লোড করা যায়নি।";
+  console.error(error);
+  return;
+ }
+ products=data||[];
+ render();
 }
-function deleteOrder(id){
-if(confirm("এই অর্ডারটি মুছে ফেলবেন?")){
-orders=orders.filter(o=>o.id!==id);save();orderRender();
+
+function render(){
+ const q=document.getElementById("search").value.toLowerCase();
+ document.getElementById("products").innerHTML=products
+ .filter(p=>(p.package_name+" "+p.game_name).toLowerCase().includes(q))
+ .map(p=>`
+ <div class="card">
+ <small>${safe(p.game_name)}</small>
+ <h3>${safe(p.package_name)}</h3>
+ <div class="price">৳${safe(p.price)}</div>
+ <button class="buy" onclick="openOrder(${Number(p.id)})">এখনই কিনুন</button>
+ </div>`).join("")||"কোনো পণ্য পাওয়া যায়নি।";
 }
+
+function openOrder(id){
+ selected=products.find(p=>Number(p.id)===Number(id));
+ if(!selected)return alert("পণ্যটি পাওয়া যাচ্ছে না।");
+ document.getElementById("selectedProduct").innerText=
+ selected.game_name+" - "+selected.package_name+" - ৳"+selected.price;
+ document.getElementById("orderModal").style.display="flex";
 }
-function closeAdmin(){document.getElementById("adminPanel").style.display="none"}
-render();
+
+function closeOrder(){
+ document.getElementById("orderModal").style.display="none";
+}
+
+async function placeOrder(){
+ if(!selected)return;
+
+ const customer=document.getElementById("customer").value.trim();
+ const uid=document.getElementById("gameID").value.trim();
+ const phone=document.getElementById("phone").value.trim();
+ const payment=document.getElementById("payment").value;
+
+ if(!customer||!uid||phone.length<8||!payment)
+ return alert("সব তথ্য সঠিকভাবে পূরণ করুন।");
+
+ const btn=document.querySelector("#orderModal .buy");
+ btn.disabled=true;
+ btn.innerText="জমা হচ্ছে...";
+
+ const {data,error}=await db.rpc("place_order",{
+  p_product_id:selected.id,
+  p_customer_name:customer,
+  p_game_uid:uid,
+  p_phone:phone,
+  p_payment_method:payment
+ });
+
+ btn.disabled=false;
+ btn.innerText="অর্ডার সাবমিট";
+
+ if(error){
+  alert("অর্ডার জমা হয়নি। আবার চেষ্টা করুন।");
+  console.error(error);
+  return;
+ }
+
+ const result=Array.isArray(data)?data[0]:data;
+ closeOrder();
+
+ document.getElementById("trackNumber").value=result.order_number;
+ document.getElementById("trackToken").value=result.tracking_token;
+
+ document.getElementById("trackResult").innerHTML=`
+ <div class="orderItem">
+ <b>অর্ডার গ্রহণ করা হয়েছে!</b><br>
+ Order Number:<br><b>${safe(result.order_number)}</b><br>
+ Tracking Code:<br><b>${safe(result.tracking_token)}</b><br>
+ এই দুটি তথ্য সংরক্ষণ করুন। অন্য কাউকে Tracking Code দেবেন না।
+ </div>`;
+
+ document.getElementById("customer").value="";
+ document.getElementById("gameID").value="";
+ document.getElementById("phone").value="";
+ document.getElementById("payment").value="";
+}
+
+async function trackOrder(){
+ const number=document.getElementById("trackNumber").value.trim();
+ const token=document.getElementById("trackToken").value.trim();
+ const box=document.getElementById("trackResult");
+
+ if(!number||!token){
+  box.innerText="Order Number ও Tracking Code দুটোই লিখুন।";
+  return;
+ }
+
+ box.innerText="খোঁজা হচ্ছে...";
+
+ const {data,error}=await db.rpc("track_order",{
+  p_order_number:number,
+  p_tracking_token:token
+ });
+
+ if(error){
+  box.innerText="এখন অর্ডার খোঁজা যাচ্ছে না। পরে চেষ্টা করুন।";
+  return;
+ }
+
+ if(!data||!data.length){
+  box.innerText="অর্ডার পাওয়া যায়নি। তথ্য আবার যাচাই করুন।";
+  return;
+ }
+
+ const o=data[0];
+ box.innerHTML=`
+ <div class="orderItem">
+ <b>অর্ডারের অবস্থা</b><br>
+ ${safe(o.game_name)} - ${safe(o.package_name)}<br>
+ দাম: ৳${safe(o.price)}<br>
+ স্ট্যাটাস: <b>${safe(o.status)}</b><br>
+ তারিখ: ${new Date(o.created_at).toLocaleString("bn-BD")}
+ </div>`;
+}
+
+function adminLogin(){
+ document.getElementById("loginModal").style.display="flex";
+}
+
+function closeLogin(){
+ document.getElementById("loginModal").style.display="none";
+}
+
+async function doAdminLogin(){
+ const email=document.getElementById("adminEmailInput").value.trim();
+ const password=document.getElementById("adminPasswordInput").value;
+
+ if(!email||!password)return alert("ইমেইল ও পাসওয়ার্ড লিখুন।");
+
+ const {data,error}=await db.auth.signInWithPassword({email,password});
+
+ if(error){
+  alert("Login হয়নি। ইমেইল ও পাসওয়ার্ড যাচাই করুন।");
+  return;
+ }
+
+ adminUser=data.user;
+ document.getElementById("adminEmail").innerText="Logged in: "+adminUser.email;
+ document.getElementById("adminPasswordInput").value="";
+ closeLogin();
+
+ document.getElementById("adminPanel").style.display="block";
+ await adminRender();
+ await orderRender();
+}
+
+async function adminLogout(){
+ await db.auth.signOut();
+ adminUser=null;
+ adminProducts=[];
+ document.getElementById("adminPanel").style.display="none";
+}
+
+async function adminRender(){
+ if(!adminUser)return;
+
+ const {data,error}=await db.from("products").select("*").order("id");
+
+ if(error){
+  alert("পণ্যের তালিকা লোড হয়নি।");
+  return;
+ }
+
+ adminProducts=data||[];
+
+ document.getElementById("adminList").innerHTML=adminProducts.map(p=>`
+ <div class="adminItem">
+ <b>${safe(p.game_name)} - ${safe(p.package_name)}</b>
+ | ৳${safe(p.price)} | ${p.active?"Active":"Inactive"}<br>
+ <button class="edit" onclick="editProduct(${Number(p.id)})">Edit</button>
+ <button class="danger" onclick="deleteProduct(${Number(p.id)})">Delete</button>
+ </div>`).join("")||"কোনো পণ্য নেই।";
+}
+
+function editProduct(id){
+ const p=adminProducts.find(x=>Number(x.id)===Number(id));
+ if(!p)return;
+
+ document.getElementById("pname").value=p.package_name;
+ document.getElementById("pgame").value=p.game_name;
+ document.getElementById("pprice").value=p.price;
+ editing=id;
+ window.scrollTo({top:document.getElementById("adminPanel").offsetTop,behavior:"smooth"});
+}
+
+function cancelEdit(){
+ editing=null;
+ document.getElementById("pname").value="";
+ document.getElementById("pgame").value="";
+ document.getElementById("pprice").value="";
+}
+
+async function saveProduct(){
+ if(!adminUser)return alert("আগে Admin Login করুন।");
+
+ const name=document.getElementById("pname").value.trim();
+ const game=document.getElementById("pgame").value.trim();
+ const price=Number(document.getElementById("pprice").value);
+
+ if(!name||!game||price<=0)
+ return alert("সব তথ্য সঠিকভাবে পূরণ করুন।");
+
+ let result;
+
+ if(editing!==null){
+  result=await db.from("products")
+  .update({package_name:name,game_name:game,price})
+  .eq("id",editing);
+ }else{
+  result=await db.from("products")
+  .insert({package_name:name,game_name:game,price,active:true});
+ }
+
+ if(result.error){
+  alert("পণ্য সংরক্ষণ হয়নি।");
+  console.error(result.error);
+  return;
+ }
+
+ cancelEdit();
+ await loadProducts();
+ await adminRender();
+}
+
+async function deleteProduct(id){
+ if(!adminUser||!confirm("পণ্যটি মুছে ফেলতে চান?"))return;
+
+ const {error}=await db.from("products").delete().eq("id",id);
+
+ if(error){
+  alert("পণ্য মুছতে সমস্যা হয়েছে।");
+  return;
+ }
+
+ await loadProducts();
+ await adminRender();
+}
+
+async function orderRender(){
+ if(!adminUser)return;
+
+ const {data,error}=await db.from("orders")
+ .select("*").order("created_at",{ascending:false});
+
+ if(error){
+  document.getElementById("orderList").innerText="অর্ডার লোড হয়নি।";
+  return;
+ }
+
+ const orders=data||[];
+ document.getElementById("orderCount").innerText="মোট অর্ডার: "+orders.length;
+
+ document.getElementById("orderList").innerHTML=orders.length?
+ orders.map(o=>`
+ <div class="orderItem">
+ <b>অর্ডার #${safe(o.order_number)}</b><br>
+ ক্রেতা: ${safe(o.customer_name)}<br>
+ পণ্য: ${safe(o.game_name)} - ${safe(o.package_name)}<br>
+ দাম: ৳${safe(o.price)}<br>
+ Game UID: ${safe(o.game_uid)}<br>
+ মোবাইল: ${safe(o.phone)}<br>
+ পেমেন্ট: ${safe(o.payment_method)}<br>
+ স্ট্যাটাস: <b>${safe(o.status)}</b><br>
+ <select class="status" onchange="changeStatus(${Number(o.id)},this.value)">
+ <option value="Pending" ${o.status==="Pending"?"selected":""}>Pending</option>
+ <option value="Processing" ${o.status==="Processing"?"selected":""}>Processing</option>
+ <option value="Complete" ${o.status==="Complete"?"selected":""}>Complete</option>
+ <option value="Cancelled" ${o.status==="Cancelled"?"selected":""}>Cancelled</option>
+ </select>
+ <button class="danger" onclick="deleteOrder(${Number(o.id)})">অর্ডার মুছুন</button>
+ </div>`).join(""):"এখনো কোনো অর্ডার নেই।";
+}
+
+async function changeStatus(id,status){
+ if(!adminUser)return;
+
+ const {error}=await db.from("orders")
+ .update({status}).eq("id",id);
+
+ if(error){
+  alert("স্ট্যাটাস পরিবর্তন হয়নি।");
+  return;
+ }
+
+ await orderRender();
+}
+
+async function deleteOrder(id){
+ if(!adminUser||!confirm("এই অর্ডারটি মুছে ফেলবেন?"))return;
+
+ const {error}=await db.from("orders").delete().eq("id",id);
+
+ if(error){
+  alert("অর্ডার মুছতে সমস্যা হয়েছে।");
+  return;
+ }
+
+ await orderRender();
+}
+
+function closeAdmin(){
+ document.getElementById("adminPanel").style.display="none";
+}
+
+loadProducts();
 </script>
 </body>
 </html>
